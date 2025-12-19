@@ -1,0 +1,7 @@
+{
+  "name": "Signalum",
+  "description": "A conversational research assistant using Gemini 2.5 Live API.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
