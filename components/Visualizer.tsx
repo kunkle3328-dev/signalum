@@ -13,7 +13,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, isMute
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Re-run effect when theme changes to update colors
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -24,152 +23,160 @@ export const Visualizer: React.FC<VisualizerProps> = ({ volume, isActive, isMute
 
     let animationId: number;
     let time = 0;
-    
-    let sUser = 0;
-    let sModel = 0;
+    let smoothedUserVol = 0;
+    let smoothedModelVol = 0;
     
     const updateSize = () => {
-        if (container && canvas) {
-            const dpr = window.devicePixelRatio || 1;
-            canvas.width = container.clientWidth * dpr;
-            canvas.height = container.clientHeight * dpr;
-            ctx.scale(dpr, dpr);
-            canvas.style.width = `${container.clientWidth}px`;
-            canvas.style.height = `${container.clientHeight}px`;
-        }
+        const dpr = window.devicePixelRatio || 1;
+        const rect = container.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
     };
 
-    const resizeObserver = new ResizeObserver(() => requestAnimationFrame(updateSize));
-    resizeObserver.observe(container);
+    window.addEventListener('resize', updateSize);
     updateSize();
 
+    const drawSpectralWave = (
+      w: number, 
+      h: number, 
+      cy: number, 
+      vol: number, 
+      color: string, 
+      options: { 
+        freq: number; 
+        speed: number; 
+        amplitude: number; 
+        opacity: number; 
+        lineWidth: number;
+        points?: number;
+        glow?: number;
+        mirrored?: boolean;
+      }
+    ) => {
+      const { freq, speed, amplitude, opacity, lineWidth, points = 120, glow = 0, mirrored = true } = options;
+      
+      const drawPath = (direction: number) => {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = opacity;
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        if (glow > 0) {
+          ctx.shadowBlur = glow * vol;
+          ctx.shadowColor = color;
+        }
+
+        const step = w / points;
+        const amp = amplitude * vol * (h * 0.45);
+
+        for (let i = 0; i <= points; i++) {
+          const x = i * step;
+          // Organic envelope: taper edges smoothly
+          const distFromCenter = Math.abs(i / points - 0.5);
+          const envelope = Math.pow(Math.cos(distFromCenter * Math.PI), 2);
+          
+          const offset = time * speed;
+          const y = cy + (direction * Math.sin(i * freq + offset) * amp * envelope);
+
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      };
+
+      drawPath(1);
+      if (mirrored) drawPath(-1);
+    };
+
     const render = () => {
-      const w = canvas.width / (window.devicePixelRatio || 1);
-      const h = canvas.height / (window.devicePixelRatio || 1);
-      const cx = w / 2;
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
       const cy = h / 2;
-      
-      sUser += (volume.user - sUser) * 0.4; 
-      sModel += (volume.model - sModel) * 0.4;
-      
-      time += 0.05 + (sModel * 0.1);
+
+      // Precision smoothing
+      smoothedUserVol += (volume.user - smoothedUserVol) * 0.12;
+      smoothedModelVol += (volume.model - smoothedModelVol) * 0.12;
+      time += 0.04;
 
       ctx.clearRect(0, 0, w, h);
 
-      if (isMuted && isActive) {
-        ctx.save();
-        ctx.fillStyle = "rgba(239, 68, 68, 0.1)"; 
-        ctx.font = "bold 14px 'Space Grotesk'";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        
-        const pulse = 10 + Math.sin(time * 3) * 2;
-        ctx.strokeStyle = "rgba(239, 68, 68, 0.5)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 30 + pulse, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.fillStyle = "#ef4444";
-        ctx.beginPath();
-        ctx.font = "24px monospace";
-        ctx.fillText("MUTED", cx, cy + 50);
-        
-        ctx.translate(cx - 12, cy - 12);
-        const p = new Path2D("M3.293 3.293a1 1 0 011.414 0l16 16a1 1 0 01-1.414 1.414l-16-16a1 1 0 010-1.414z");
-        ctx.fill(p);
-        const p2 = new Path2D("M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4");
-        ctx.stroke(p2);
-        
-        ctx.restore();
-        
-      } else {
-
-          const barCountHalf = 24; 
-          const barWidth = 4;
-          const barGap = 6;
-          const maxBarHeight = h * 0.6;
-          
-          // DYNAMIC GRADIENTS BASED ON THEME
-          // 1. AI Speaking (Primary Theme Color)
-          const gradAI = ctx.createLinearGradient(0, cy - 100, 0, cy + 100);
-          gradAI.addColorStop(0, `${theme.colors.hexPrimary}20`); // fade out
-          gradAI.addColorStop(0.5, theme.colors.hexPrimary); 
-          gradAI.addColorStop(1, theme.colors.hexSecondary);
-
-          // 2. User Speaking (Secondary/Complimentary)
-          // For simplicity, we make user speaking white/bright to contrast with colored themes
-          const gradUser = ctx.createLinearGradient(0, cy - 100, 0, cy + 100);
-          gradUser.addColorStop(0, '#ffffff20');
-          gradUser.addColorStop(0.5, '#ffffff');
-          gradUser.addColorStop(1, '#e2e8f0');
-
-          // 3. Idle
-          const gradIdle = ctx.createLinearGradient(0, cy - 20, 0, cy + 20);
-          gradIdle.addColorStop(0, `${theme.colors.hexPrimary}05`);
-          gradIdle.addColorStop(0.5, `${theme.colors.hexPrimary}20`);
-          gradIdle.addColorStop(1, `${theme.colors.hexPrimary}05`);
-
-          ctx.shadowBlur = 0; 
-          ctx.shadowColor = 'transparent';
-
-          const drawBar = (index: number, side: number) => {
-              const x = cx + (index * (barWidth + barGap) * side);
-              let height = 4;
-              
-              if (isActive) {
-                const falloff = 1 - (index / barCountHalf); 
-                const envelope = Math.pow(falloff, 1.5);
-                const noise = Math.sin(time * 2 + index * 0.5) * Math.cos(time - index * 0.3);
-                
-                const vol = Math.max(sModel, sUser);
-                const isUser = sUser > sModel;
-                
-                let wave = vol * maxBarHeight * envelope;
-                wave += wave * noise * 0.3; 
-                
-                const idle = 8 * Math.sin(time + index * 0.2) * envelope;
-                
-                height = Math.max(4, wave + (vol < 0.01 ? idle : 0));
-                
-                if (vol < 0.01) ctx.fillStyle = gradIdle;
-                else ctx.fillStyle = isUser ? gradUser : gradAI;
-
-              } else {
-                height = 4;
-                ctx.fillStyle = `${theme.colors.hexPrimary}20`;
-                ctx.shadowBlur = 0;
-              }
-
-              const y = cy - height / 2;
-              ctx.beginPath();
-              ctx.roundRect(x, y, barWidth, height, 4);
-              ctx.fill();
-          };
-
-          drawBar(0, 0);
-
-          for (let i = 1; i <= barCountHalf; i++) {
-            drawBar(i, 1);  // Right
-            drawBar(i, -1); // Left
-          }
+      if (!isActive) {
+        // Idle: Single, ultra-thin pulsing horizon beam
+        const idlePulse = 0.04 + Math.sin(time * 0.4) * 0.01;
+        drawSpectralWave(w, h, cy, idlePulse, theme.colors.hexPrimary, {
+          freq: 0.02, speed: 0.3, amplitude: 0.1, opacity: 0.2, lineWidth: 1, mirrored: false
+        });
+        animationId = requestAnimationFrame(render);
+        return;
       }
-      
-      ctx.shadowBlur = 0;
+
+      if (isMuted) {
+        // Warning: Jagged, erratic line for mute state
+        drawSpectralWave(w, h, cy, 0.08, '#ef4444', {
+          freq: 0.8, speed: 12, amplitude: 0.6, opacity: 0.6, lineWidth: 2, points: 60, glow: 15
+        });
+      } else {
+        const modelColor = theme.colors.hexPrimary;
+        const userColor = '#ffffff';
+        const accentColor = theme.colors.hexSecondary;
+
+        // 1. Atmosphere Layer (Model wide harmonics)
+        if (smoothedModelVol > 0.005) {
+          drawSpectralWave(w, h, cy, smoothedModelVol * 1.5, modelColor, {
+            freq: 0.03, speed: 0.8, amplitude: 1.0, opacity: 0.1, lineWidth: 1, mirrored: true
+          });
+        }
+
+        // 2. User Detail Layer (High frequency)
+        if (smoothedUserVol > 0.005) {
+          drawSpectralWave(w, h, cy, smoothedUserVol * 1.2, userColor, {
+            freq: 0.12, speed: 3.5, amplitude: 0.8, opacity: 0.2, lineWidth: 1, points: 150
+          });
+        }
+
+        // 3. THE CORE (Brightest, most responsive stroke)
+        const combinedVol = Math.max(smoothedUserVol, smoothedModelVol, 0.02);
+        const coreColor = smoothedModelVol > smoothedUserVol ? modelColor : userColor;
+        
+        // Glow pass
+        drawSpectralWave(w, h, cy, combinedVol, coreColor, {
+          freq: 0.07, speed: 2.2, amplitude: 1.1, opacity: 0.8, lineWidth: 3.5, glow: 25
+        });
+
+        // Sharp highlight pass
+        drawSpectralWave(w, h, cy, combinedVol, coreColor, {
+          freq: 0.07, speed: 2.2, amplitude: 1.1, opacity: 1, lineWidth: 1, mirrored: true
+        });
+
+        // 4. Accent Ribbons
+        if (combinedVol > 0.1) {
+          drawSpectralWave(w, h, cy, combinedVol * 0.4, accentColor, {
+            freq: 0.25, speed: -5, amplitude: 0.4, opacity: 0.5, lineWidth: 0.5, points: 200
+          });
+        }
+      }
+
       animationId = requestAnimationFrame(render);
     };
 
     render();
-
     return () => {
       cancelAnimationFrame(animationId);
-      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateSize);
     };
-  }, [volume, isActive, isMuted, theme]); // Added theme dependency
+  }, [volume, isActive, isMuted, theme]);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative z-10">
-        <canvas ref={canvasRef} className="block w-full h-full" />
+    <div ref={containerRef} className="w-full h-full max-w-5xl flex items-center justify-center overflow-hidden pointer-events-none">
+        <canvas ref={canvasRef} className="block w-full h-full opacity-90 transition-opacity duration-1000" />
     </div>
   );
 };

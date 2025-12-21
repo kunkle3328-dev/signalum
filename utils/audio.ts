@@ -12,12 +12,26 @@ export function floatTo16BitPCM(float32Array: Float32Array): Int16Array {
 }
 
 // Optimized PCM16 (Bytes) -> Float32 (AudioBuffer) converter
-// Uses direct typed array access for performance
 export function pcm16ToFloat32(pcmData: Uint8Array): Float32Array {
-    // Create an Int16 view on the same buffer (no copy if aligned)
-    const int16Array = new Int16Array(pcmData.buffer, pcmData.byteOffset, pcmData.length / 2);
+    // Gemini Live sends raw 16-bit PCM. We need to convert it to Float32 for Web Audio.
+    const buffer = pcmData.buffer;
+    const offset = pcmData.byteOffset;
+    const length = pcmData.byteLength;
+    
+    // Ensure 2-byte alignment for Int16Array view.
+    let int16Array: Int16Array;
+    if (offset % 2 === 0) {
+        int16Array = new Int16Array(buffer, offset, length / 2);
+    } else {
+        // Fallback: Copy buffer to ensure alignment if provided raw bytes are offset incorrectly.
+        const alignedBuffer = new Uint8Array(length);
+        alignedBuffer.set(pcmData);
+        int16Array = new Int16Array(alignedBuffer.buffer, 0, length / 2);
+    }
+
     const float32Array = new Float32Array(int16Array.length);
     for (let i = 0; i < int16Array.length; i++) {
+        // Convert signed 16-bit integer to -1.0 to 1.0 float range.
         float32Array[i] = int16Array[i] / 32768.0;
     }
     return float32Array;

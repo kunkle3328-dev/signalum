@@ -10,38 +10,42 @@ interface UseLiveAudioProps {
   audioStyle: AudioStyle;
   userName: string;
   isRevenueMode: boolean;
-  apiKey: string; // Kept for interface compatibility but using process.env.API_KEY internally
+  apiKey: string; 
   customSystemInstruction: string;
 }
+
+const VALID_VOICES = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
+const JITTER_BUFFER_SECONDS = 0.15; 
 
 export function useLiveAudio({ sources, voiceName, audioStyle, userName, isRevenueMode, customSystemInstruction }: UseLiveAudioProps) {
   const [status, setStatus] = useState<ConnectionState>('disconnected');
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState<VolumeLevel>({ user: 0, model: 0 });
   
-  const sessionPromiseRef = useRef<Promise<any> | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const isMutedRef = useRef(isMuted);
+  const statusRef = useRef<ConnectionState>('disconnected');
   const nextStartTimeRef = useRef<number>(0);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const isMountedRef = useRef<boolean>(true);
   
+  const sessionPromiseRef = useRef<Promise<any> | null>(null);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
 
-  useEffect(() => {
-      isMountedRef.current = true;
-      return () => { 
-        isMountedRef.current = false; 
-        cleanup(); 
-      };
-  }, []);
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   const cleanup = useCallback(() => {
     activeSourcesRef.current.forEach(source => { 
-      try { source.stop(); source.disconnect(); } catch (e) { } 
+      try { 
+        source.onended = null;
+        source.stop(); 
+        source.disconnect(); 
+      } catch (e) { } 
     });
     activeSourcesRef.current.clear();
     
@@ -49,154 +53,192 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
       streamRef.current.getTracks().forEach(track => track.stop()); 
       streamRef.current = null; 
     }
+
     if (processorRef.current) { 
       try { processorRef.current.disconnect(); } catch (e) {} 
       processorRef.current = null; 
     }
+    
     if (inputAnalyserRef.current) { 
       try { inputAnalyserRef.current.disconnect(); } catch (e) {} 
       inputAnalyserRef.current = null; 
     }
+    
+    if (outputAnalyserRef.current) {
+      try { outputAnalyserRef.current.disconnect(); } catch (e) {}
+      outputAnalyserRef.current = null;
+    }
+
     if (sessionPromiseRef.current) { 
-      sessionPromiseRef.current.then(session => { 
+      const currentPromise = sessionPromiseRef.current;
+      sessionPromiseRef.current = null;
+      currentPromise.then(session => { 
         try { session.close(); } catch (e) {} 
       }).catch(() => {}); 
-      sessionPromiseRef.current = null; 
     }
-    if (inputAudioContextRef.current) { 
-      try { inputAudioContextRef.current.close(); } catch (e) {} 
-      inputAudioContextRef.current = null; 
-    }
-    if (audioContextRef.current) {
-      try { audioContextRef.current.close(); } catch (e) {}
-      audioContextRef.current = null;
-    }
+
+    [inputAudioContextRef, outputAudioContextRef].forEach(ref => {
+      if (ref.current) {
+        const ctx = ref.current;
+        ref.current = null;
+        try { 
+          if (ctx.state !== 'closed') ctx.close(); 
+        } catch (e) {}
+      }
+    });
+
     nextStartTimeRef.current = 0;
   }, []);
 
   const connect = useCallback(async () => {
-    if (status !== 'disconnected' && status !== 'error') return;
+    if (statusRef.current === 'connected' || statusRef.current === 'connecting') return;
     
     try {
       setStatus('connecting');
+      
+      // Platform-specific API key check to prevent Network Error
+      const aistudio = (window as any).aistudio;
+      if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
+        if (!(await aistudio.hasSelectedApiKey())) {
+          await aistudio.openSelectKey();
+        }
+      }
+
       cleanup();
 
-      // Ensure output context is 24kHz for optimal model matching
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      const outCtx = new AudioContextClass({ sampleRate: 24000 });
-      audioContextRef.current = outCtx;
-      
-      const outAnalyser = outCtx.createAnalyser();
-      outAnalyser.fftSize = 256;
-      outputAnalyserRef.current = outAnalyser;
-      outAnalyser.connect(outCtx.destination);
-
-      // Input context at 16kHz for Gemini requirements
       const inputCtx = new AudioContextClass({ sampleRate: 16000 });
       inputAudioContextRef.current = inputCtx;
       
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { 
-          sampleRate: 16000, 
-          channelCount: 1, 
-          echoCancellation: true, 
-          noiseSuppression: true 
-        } 
-      });
+      const outputCtx = new AudioContextClass({ sampleRate: 24000 });
+      outputAudioContextRef.current = outputCtx;
+
+      await Promise.all([inputCtx.resume(), outputCtx.resume()]);
+
+      const outAnalyser = outputCtx.createAnalyser();
+      outAnalyser.fftSize = 256;
+      outputAnalyserRef.current = outAnalyser;
+      outAnalyser.connect(outputCtx.destination);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Zephyr';
+
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         callbacks: {
           onopen: () => {
-            if (!isMountedRef.current) return;
+            if (!isMountedRef.current || !inputAudioContextRef.current) return;
             setStatus('connected');
             
-            // Set up audio input streaming ONLY after session is open
-            const source = inputCtx.createMediaStreamSource(stream);
-            const inputAnalyser = inputCtx.createAnalyser();
-            inputAnalyser.fftSize = 256;
-            inputAnalyserRef.current = inputAnalyser;
+            const currentInCtx = inputAudioContextRef.current;
+            const micSource = currentInCtx.createMediaStreamSource(stream);
+            const inAnalyser = currentInCtx.createAnalyser();
+            inAnalyser.fftSize = 256;
+            inputAnalyserRef.current = inAnalyser;
             
-            const processor = inputCtx.createScriptProcessor(4096, 1, 1);
+            const processor = currentInCtx.createScriptProcessor(4096, 1, 1);
             processorRef.current = processor;
             
-            source.connect(inputAnalyser);
-            inputAnalyser.connect(processor);
-            processor.connect(inputCtx.destination);
+            micSource.connect(inAnalyser);
+            inAnalyser.connect(processor);
+            processor.connect(currentInCtx.destination);
 
-            processor.onaudioprocess = (audioProcessingEvent) => {
-              if (isMuted) return;
-              const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+            processor.onaudioprocess = (e) => {
+              if (statusRef.current !== 'connected') return;
+              const inputData = e.inputBuffer.getChannelData(0);
               const pcmBlob = createAudioBlob(inputData, 16000);
               
-              // CRITICAL: Rely solely on the resolved session promise to send data
               sessionPromise.then((session) => {
-                session.sendRealtimeInput({ media: pcmBlob });
-              });
+                if (!isMutedRef.current) {
+                  session.sendRealtimeInput({ media: pcmBlob });
+                }
+              }).catch(() => {});
             };
 
-            nextStartTimeRef.current = outCtx.currentTime + 0.1;
+            if (outputAudioContextRef.current) {
+                nextStartTimeRef.current = outputAudioContextRef.current.currentTime + JITTER_BUFFER_SECONDS;
+            }
           },
           onmessage: async (message: LiveServerMessage) => {
-             const interrupted = message.serverContent?.interrupted;
-             if (interrupted) {
-                activeSourcesRef.current.forEach(src => { try { src.stop(); } catch(e){} });
+             if (!isMountedRef.current || !outputAudioContextRef.current) return;
+             const currentOutCtx = outputAudioContextRef.current;
+
+             if (message.serverContent?.interrupted) {
+                activeSourcesRef.current.forEach(src => { 
+                  try { src.stop(); src.disconnect(); } catch(e){} 
+                });
                 activeSourcesRef.current.clear();
-                if (audioContextRef.current) nextStartTimeRef.current = audioContextRef.current.currentTime;
+                nextStartTimeRef.current = currentOutCtx.currentTime + JITTER_BUFFER_SECONDS;
                 return; 
              }
 
-             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-             if (base64Audio && audioContextRef.current) {
-                const ctx = audioContextRef.current;
-                const float32Array = pcm16ToFloat32(base64Decode(base64Audio));
-                const buffer = ctx.createBuffer(1, float32Array.length, 24000);
-                buffer.getChannelData(0).set(float32Array);
-                
-                const sourceNode = ctx.createBufferSource();
-                sourceNode.buffer = buffer;
-                sourceNode.connect(outputAnalyserRef.current || ctx.destination);
-                
-                const now = ctx.currentTime;
-                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, now);
-                
-                sourceNode.start(nextStartTimeRef.current);
-                nextStartTimeRef.current += buffer.duration;
-                
-                activeSourcesRef.current.add(sourceNode);
-                sourceNode.onended = () => activeSourcesRef.current.delete(sourceNode);
+             const parts = message.serverContent?.modelTurn?.parts;
+             if (parts) {
+               for (const part of parts) {
+                 const base64Audio = part.inlineData?.data;
+                 if (base64Audio) {
+                    const rawData = base64Decode(base64Audio);
+                    const float32Array = pcm16ToFloat32(rawData);
+                    const audioBuffer = currentOutCtx.createBuffer(1, float32Array.length, 24000);
+                    audioBuffer.getChannelData(0).set(float32Array);
+                    
+                    const sourceNode = currentOutCtx.createBufferSource();
+                    sourceNode.buffer = audioBuffer;
+                    sourceNode.connect(outputAnalyserRef.current || currentOutCtx.destination);
+                    
+                    const now = currentOutCtx.currentTime;
+                    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, now);
+                    
+                    sourceNode.start(nextStartTimeRef.current);
+                    nextStartTimeRef.current += audioBuffer.duration;
+                    
+                    activeSourcesRef.current.add(sourceNode);
+                    sourceNode.onended = () => {
+                      activeSourcesRef.current.delete(sourceNode);
+                      sourceNode.disconnect();
+                    };
+                 }
+               }
              }
           },
           onclose: () => {
-            setStatus('disconnected');
+            if (isMountedRef.current) setStatus('disconnected');
             cleanup();
           },
-          onerror: (e) => {
-            console.error("Signalum Live Session Error:", e);
-            setStatus('error');
+          onerror: (e: any) => {
+            console.error("Signalum Pipeline Fatal:", e);
+            // If it was a network error, it might be an auth issue
+            if (e?.message?.includes('Network error')) {
+               console.warn("Possible API Key issue. Re-triggering key selection.");
+            }
+            if (isMountedRef.current) setStatus('error');
             cleanup();
           }
         },
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { 
-            voiceConfig: { 
-              prebuiltVoiceConfig: { voiceName: 'Zephyr' } // Using highly stable supported voice
-            } 
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: apiVoice } } 
           },
           systemInstruction: customSystemInstruction,
         },
       });
 
       sessionPromiseRef.current = sessionPromise;
+      sessionPromise.catch((err) => {
+        if (isMountedRef.current) setStatus('error');
+        cleanup();
+      });
+      
     } catch (error) {
-      console.error("Signalum connection failed:", error);
+      console.error("Signalum Init Failed:", error);
       setStatus('error');
       cleanup();
     }
-  }, [status, isMuted, customSystemInstruction, cleanup]);
+  }, [voiceName, customSystemInstruction, cleanup]);
 
   const disconnect = useCallback(() => { 
     cleanup(); 
@@ -209,8 +251,8 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
     let frame: number;
     const loop = () => {
       let u = 0, m = 0;
-      if (status === 'connected') {
-          if (inputAnalyserRef.current && !isMuted) {
+      if (statusRef.current === 'connected') {
+          if (inputAnalyserRef.current && !isMutedRef.current) {
              const d = new Uint8Array(inputAnalyserRef.current.frequencyBinCount);
              inputAnalyserRef.current.getByteFrequencyData(d);
              u = d.reduce((a,b)=>a+b,0) / d.length / 255;
@@ -226,7 +268,7 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
     };
     loop();
     return () => cancelAnimationFrame(frame);
-  }, [status, isMuted]);
+  }, []);
 
   return { status, isMuted, volume, connect, disconnect, toggleMute };
 }

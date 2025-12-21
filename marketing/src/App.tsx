@@ -13,7 +13,6 @@ import {
   HelpCircle,
   Clock,
   Lock,
-  // Fix: Missing import for ShieldCheck
   ShieldCheck
 } from 'lucide-react';
 
@@ -242,11 +241,12 @@ export default function App() {
               <PricingTier 
                 title="Free"
                 price="0"
-                desc="Perfect for trying out studio-grade voice."
+                desc="Perfect for trying out studio-grade voice intelligence."
                 features={[
-                  "Studio-grade Voxera voice",
-                  "Active Context (up to 3 sources)",
-                  "Limited Research Discovery",
+                  "Voxera Neural Presence",
+                  "Active Context (3 Nodes)",
+                  "Standard Research Scans",
+                  "Basic Personality Tuning",
                   "Community Support"
                 ]}
                 cta="Start Free"
@@ -254,54 +254,56 @@ export default function App() {
               />
               <PricingTier 
                 title="Pro"
-                price="19"
-                desc="For creators and researchers needing more."
+                price="29"
+                desc="The definitive workspace for deep research."
                 features={[
-                  "Unlimited studio conversations",
-                  "Discover up to 10 sources per topic",
-                  "Premium Personas (Money Engine, etc)",
-                  "Save + share sessions",
-                  "Priority Uplink processing"
+                  "Unlimited Studio Uplink",
+                  "Adaptive Intelligence Engine",
+                  "Custom Vocal Architecture",
+                  "Advanced Neural Tuning Matrix",
+                  "10-Source Discovery Scans",
+                  "Premium Personas Included"
                 ]}
-                cta="Upgrade to Pro"
+                cta="Go Pro Now"
                 highlighted
                 onAction={() => window.location.href = APP_URL}
               />
               <PricingTier 
                 title="Agency"
-                price="49"
-                desc="Full custom studio workspace for teams."
+                price="99"
+                desc="Enterprise-grade intelligence pipeline for high-output teams."
                 features={[
-                  "Everything in Pro",
-                  "Higher daily usage limits",
-                  "Larger knowledge bases",
-                  "Priority Support",
-                  "Early Access to Beta Tools"
+                  "Strategic Enterprise Pipeline",
+                  "Multi-Seat Neural Workspace",
+                  "Advanced Knowledge Persistence",
+                  "Unlimited Multi-Scans",
+                  "Founder's Beta Access",
+                  "Priority Support Authority"
                 ]}
-                cta="Go Agency"
+                cta="Contact Sales"
                 onAction={() => window.location.href = APP_URL}
               />
             </div>
 
             {/* Comparison Table */}
             <div className="mb-24 overflow-x-auto">
-              <h3 className="text-2xl font-display font-bold mb-8 text-center">Compare Features</h3>
+              <h3 className="text-2xl font-display font-bold mb-8 text-center">Neural Comparison Matrix</h3>
               <table className="w-full text-left border-collapse glass-panel rounded-3xl overflow-hidden border-white/10">
                 <thead>
                   <tr className="border-b border-white/10 bg-white/[0.02]">
-                    <th className="p-6 text-sm font-bold uppercase tracking-widest text-slate-500">Feature</th>
+                    <th className="p-6 text-sm font-bold uppercase tracking-widest text-slate-500">Feature Authority</th>
                     <th className="p-6 text-sm font-bold uppercase tracking-widest">Free</th>
                     <th className="p-6 text-sm font-bold uppercase tracking-widest text-blue-400">Pro</th>
                     <th className="p-6 text-sm font-bold uppercase tracking-widest">Agency</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  <ComparisonRow label="Active Sources" free="3" pro="Unlimited" agency="Unlimited" />
-                  <ComparisonRow label="Voice Quality" free="Studio" pro="Studio+" agency="Studio+" />
-                  <ComparisonRow label="Research Limit" free="3 sources" pro="10 sources" agency="10+ sources" />
-                  <ComparisonRow label="Personas" free="Standard" pro="Premium" agency="Customizable" />
-                  <ComparisonRow label="Data Persistence" free="None" pro="Yes" proChecked agency="Yes" agencyChecked />
-                  <ComparisonRow label="Support" free="Community" pro="Standard" agency="Priority" />
+                  <ComparisonRow label="Active Context Nodes" free="3" pro="Unlimited" agency="Unlimited" />
+                  <ComparisonRow label="Vocal Customization" free="Presets Only" pro="Full Custom Tuning" agency="Full Custom Tuning" />
+                  <ComparisonRow label="Adaptive Intelligence" free="—" pro="Enabled" proChecked agency="Enabled" agencyChecked />
+                  <ComparisonRow label="Research Discovery" free="3 sources" pro="10 sources" agency="25+ sources" />
+                  <ComparisonRow label="Intelligence Grounding" free="Standard" pro="High-Fidelity" agency="Elite" />
+                  <ComparisonRow label="Support Authority" free="Community" pro="Standard" agency="Direct Support" />
                 </tbody>
               </table>
             </div>

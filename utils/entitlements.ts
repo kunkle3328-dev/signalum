@@ -1,7 +1,7 @@
 
 import { UserProfile, UserEntitlements, UserPlan } from '../types';
 
-const STORAGE_KEY = 'signalum_profile_v3';
+const STORAGE_KEY = 'signalum_profile_v4';
 
 export const INITIAL_ENTITLEMENTS: UserEntitlements = {
   pro_access: false,
@@ -22,9 +22,9 @@ export const computeEntitlements = (profile: Partial<UserProfile>): UserEntitlem
   const isProPlan = profile.plan === 'PRO' || profile.plan === 'AGENCY';
   const grants = profile.grants || [];
   
-  const hasLifetime = grants.some(g => g.type === 'lifetime_pro');
-  const hasValidTrial = grants.some(g => g.type === 'pro_trial' && (!g.expiresAt || g.expiresAt > now));
-  const hasFounderGrant = grants.some(g => g.type === 'founders');
+  const hasLifetime = grants.some(g => g.grant_type === 'lifetime_pro');
+  const hasValidTrial = grants.some(g => g.grant_type === 'pro_trial' && (!g.expires_at || (typeof g.expires_at === 'number' ? g.expires_at : new Date(g.expires_at).getTime()) > now));
+  const hasFounderGrant = grants.some(g => g.grant_type === 'founders');
 
   const proAccess = isProPlan || hasLifetime || hasValidTrial;
 
@@ -39,12 +39,19 @@ export const computeEntitlements = (profile: Partial<UserProfile>): UserEntitlem
   };
 };
 
+export const setProfile = (profile: UserProfile): void => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+};
+
 export const getProfile = (): UserProfile => {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      // Re-compute entitlements to catch expired trials
+      // Ensure settings exist
+      if (!parsed.settings) {
+        parsed.settings = { animationsEnabled: true, neonIntensity: 'medium', defaultModeId: 'entrepreneur' };
+      }
       return {
         ...parsed,
         entitlements: computeEntitlements(parsed)
@@ -64,15 +71,16 @@ export const getProfile = (): UserProfile => {
       minutesSpent: 0,
       discoverTopicsCount: 0
     },
-    referralCode: generateReferralCode()
+    referralCode: generateReferralCode(),
+    settings: {
+      animationsEnabled: true,
+      neonIntensity: 'medium',
+      defaultModeId: 'entrepreneur'
+    }
   };
 
   setProfile(newProfile);
   return newProfile;
-};
-
-export const setProfile = (profile: UserProfile): void => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
 };
 
 export const updateProfile = (updates: Partial<UserProfile>): UserProfile => {

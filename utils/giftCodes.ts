@@ -26,7 +26,8 @@ export const redeemCode = (code: string): boolean => {
   const expectedCheck = (prefix.charCodeAt(0) + random.charCodeAt(0)).toString(16).toUpperCase();
   if (check !== expectedCheck) return false;
 
-  const grantType: UserGrant['type'] = 
+  // Corrected property reference to grant_type
+  const grantType: UserGrant['grant_type'] = 
     prefix === 'LT' ? 'lifetime_pro' : 
     prefix === 'TR' ? 'pro_trial' : 
     'founders';
@@ -34,15 +35,16 @@ export const redeemCode = (code: string): boolean => {
   // Get current profile to get user_id and existing grants
   const currentProfile = getProfile();
 
-  // FIX: Added missing user_id property required by UserGrant interface
+  // Aligned object keys with UserGrant interface and added missing id
   const newGrant: UserGrant = {
+    id: crypto.randomUUID(),
     user_id: currentProfile.id,
-    type: grantType,
-    redeemedAt: Date.now(),
-    expiresAt: grantType === 'pro_trial' ? Date.now() + (30 * 24 * 60 * 60 * 1000) : undefined
+    grant_type: grantType,
+    created_at: Date.now(),
+    expires_at: grantType === 'pro_trial' ? Date.now() + (30 * 24 * 60 * 60 * 1000) : undefined
   };
 
-  // FIX: Replaced window.signalum_grants with profile state for consistency and type safety
+  // Fixed the grant list update logic
   const profile = updateProfile({
     grants: [...(currentProfile.grants || []), newGrant], 
     plan: grantType === 'lifetime_pro' ? 'PRO' : undefined
