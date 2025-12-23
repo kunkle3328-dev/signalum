@@ -19,6 +19,36 @@ export interface PersonalityTraits {
   isAdaptive: boolean; // Dynamic context shifting
 }
 
+export interface ExpressiveVoiceProfile {
+  id: string;
+  name: string;
+  description: string;
+  scope: 'global_default' | 'user_specific';
+  isActive: boolean;
+  
+  // Core Delivery Controls (0-100)
+  stability: number;       // Consistency vs natural variation
+  expressiveness: number;  // How animated vs neutral
+  clarity: number;         // Sentence simplification + structure
+  warmth: number;          // Conversational softness
+  emphasis: number;        // Verbal emphasis strength
+  pace: number;            // Slower <-> Faster
+  pauseFrequency: number;  // How often pauses are inserted
+  teachingBias: number;    // How strongly to structure explanations
+  speakerBoost: boolean;   // Favor confident delivery
+
+  // Guardrails & Config
+  maxSentenceLength?: number;
+  forbiddenPatterns?: string[];
+  
+  // Legacy/LLM Specific
+  steeringPrompt?: string; // Direct instruction for LLM providers
+  pronunciationNotes?: string;
+
+  version: number;
+  lastUpdated: number;
+}
+
 export interface PromptVersion {
   id: string;
   versionNumber: number;
@@ -87,7 +117,7 @@ export interface Source {
 export type ModeCategory = 'ENTERPRISE' | 'MONEY' | 'CONTENT' | 'LEARN' | 'CUSTOM';
 export type UserPlan = 'FREE' | 'PRO' | 'AGENCY';
 
-export type ThemeId = 'midnight' | 'clean_light' | 'signalum_studio' | 'focus_black' | 'glass_horizon' | 'midnight_neon' | 'nebula' | 'solaris' | 'quantal' | 'aether' | 'onyx';
+export type ThemeId = 'midnight' | 'clean_light' | 'signalum_studio' | 'focus_black' | 'glass_horizon' | 'midnight_neon' | 'nebula' | 'solaris' | 'quantal' | 'aether' | 'onyx' | string;
 
 export interface Theme {
   id: ThemeId;
@@ -112,11 +142,13 @@ export interface Theme {
     textPrimary: string;
     textSecondary: string;
     accent: string;
+    borderColor?: string;
     glassOpacity: string;
     glassBlur: string;
     vignette: number;
     grain: number;
     motionLevel: 'none' | 'low' | 'high';
+    microInteractions?: boolean;
   };
 }
 
@@ -157,6 +189,7 @@ export type AudioStyle =
   | 'strategy'
   | 'marketing'
   | 'mentor'
+  | 'research_beast'
   | string; // Support for custom mode IDs
 
 export interface PersonaProfile {
@@ -171,7 +204,50 @@ export interface PersonaProfile {
   icon?: string;
 }
 
+export interface ResearchAssumption {
+  text: string;
+  type: 'implicit' | 'explicit';
+}
+
+export interface ResearchClaim {
+  claim: string;
+  confidence: 'high' | 'medium' | 'low';
+  rationale: string;
+}
+
+export interface ResearchNextStep {
+  step: string;
+  why: string;
+  effort: 'low' | 'med' | 'high';
+}
+
+export interface ResearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+  provider: 'retrieval' | 'user' | 'system';
+}
+
+export interface ResearchMetadata {
+  modeId: string;
+  assumptions: ResearchAssumption[];
+  sources: ResearchSource[];
+  claims: ResearchClaim[];
+  nextSteps: ResearchNextStep[];
+  timestamp: number;
+  topic: string;
+}
+
 export const PERSONA_REGISTRY: Record<AudioStyle, PersonaProfile> = {
+  research_beast: {
+    id: 'research_beast',
+    name: 'Research Beast',
+    category: 'ENTERPRISE',
+    rules: ['Deep analysis', 'Source citation', 'Assumption checking'],
+    responseFormat: 'Structured research report.',
+    voiceHints: 'Analytical, thorough.',
+    icon: '🦁'
+  },
   developer: {
     id: 'developer',
     name: 'Tech Architect',

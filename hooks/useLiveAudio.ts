@@ -15,7 +15,8 @@ interface UseLiveAudioProps {
 }
 
 const VALID_VOICES = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
-const JITTER_BUFFER_SECONDS = 0.15; 
+// Increased Jitter Buffer slightly to handle network variance better for smooth flow
+const JITTER_BUFFER_SECONDS = 0.35; 
 
 export function useLiveAudio({ sources, voiceName, audioStyle, userName, isRevenueMode, customSystemInstruction }: UseLiveAudioProps) {
   const [status, setStatus] = useState<ConnectionState>('disconnected');
@@ -99,7 +100,8 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
       // Platform-specific API key check to prevent Network Error
       const aistudio = (window as any).aistudio;
       if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
-        if (!(await aistudio.hasSelectedApiKey())) {
+        const hasKey = await aistudio.hasSelectedApiKey();
+        if (!hasKey) {
           await aistudio.openSelectKey();
         }
       }
@@ -123,7 +125,13 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // Ensure key is available before init
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) {
+        throw new Error("API Key not found. Please select a valid key.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       const apiVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Zephyr';
 
       const sessionPromise = ai.live.connect({
@@ -159,6 +167,7 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
             };
 
             if (outputAudioContextRef.current) {
+                // Initial drift correction
                 nextStartTimeRef.current = outputAudioContextRef.current.currentTime + JITTER_BUFFER_SECONDS;
             }
           },
@@ -190,7 +199,11 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
                     sourceNode.connect(outputAnalyserRef.current || currentOutCtx.destination);
                     
                     const now = currentOutCtx.currentTime;
-                    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, now);
+                    // Improved Scheduling:
+                    // If next start time is in the past (lag), reset to now + tiny buffer to avoid chopping start of chunk
+                    if (nextStartTimeRef.current < now) {
+                        nextStartTimeRef.current = now + 0.05; 
+                    }
                     
                     sourceNode.start(nextStartTimeRef.current);
                     nextStartTimeRef.current += audioBuffer.duration;
@@ -210,10 +223,19 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
           },
           onerror: (e: any) => {
             console.error("Signalum Pipeline Fatal:", e);
-            // If it was a network error, it might be an auth issue
-            if (e?.message?.includes('Network error')) {
-               console.warn("Possible API Key issue. Re-triggering key selection.");
+            
+            // Check for common auth/network errors
+            const isAuthError = e?.message?.includes('401') || e?.message?.includes('403') || e?.message?.includes('Network error');
+            
+            if (isAuthError) {
+               console.warn("API Key issue detected. Triggering re-selection.");
+               const aistudio = (window as any).aistudio;
+               if (aistudio && typeof aistudio.openSelectKey === 'function') {
+                   // Force open key selector on error to allow user to fix it
+                   aistudio.openSelectKey(); 
+               }
             }
+            
             if (isMountedRef.current) setStatus('error');
             cleanup();
           }
@@ -235,6 +257,13 @@ export function useLiveAudio({ sources, voiceName, audioStyle, userName, isReven
       
     } catch (error) {
       console.error("Signalum Init Failed:", error);
+      
+      // If initialization fails (e.g. missing key), try to prompt again
+      const aistudio = (window as any).aistudio;
+      if (aistudio && typeof aistudio.openSelectKey === 'function') {
+          aistudio.openSelectKey();
+      }
+
       setStatus('error');
       cleanup();
     }

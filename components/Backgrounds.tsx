@@ -1,13 +1,14 @@
 
 import React from 'react';
-import { ThemeId } from '../types';
+import { Theme, ThemeId } from '../types';
 
 interface BackgroundProps {
   themeId: ThemeId;
+  theme: Theme; // Pass the full theme object
   animationsEnabled?: boolean;
 }
 
-export const Background: React.FC<BackgroundProps> = ({ themeId, animationsEnabled = true }) => {
+export const Background: React.FC<BackgroundProps> = ({ themeId, theme, animationsEnabled = true }) => {
   return (
     <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none bg-black transform-gpu">
       {themeId === 'midnight' && <CyberTheme color="#00f3ff" />}
@@ -21,6 +22,11 @@ export const Background: React.FC<BackgroundProps> = ({ themeId, animationsEnabl
       {themeId === 'glass_horizon' && <GlassHorizonTheme />}
       {themeId === 'solaris' && <SolarisTheme />}
       {themeId === 'aether' && <AetherTheme />}
+      
+      {/* Custom Theme Fallback */}
+      {!['midnight', 'midnight_neon', 'nebula', 'quantal', 'focus_black', 'onyx', 'clean_light', 'signalum_studio', 'glass_horizon', 'solaris', 'aether'].includes(themeId) && (
+        <CustomThemeRender theme={theme} animationsEnabled={animationsEnabled} />
+      )}
       
       {/* Premium Cinematic Overlays */}
       <div className="absolute inset-0 cyber-grid opacity-[0.4] mix-blend-overlay"></div>
@@ -37,6 +43,20 @@ export const Background: React.FC<BackgroundProps> = ({ themeId, animationsEnabl
     </div>
   );
 };
+
+const CustomThemeRender = ({ theme, animationsEnabled }: { theme: Theme, animationsEnabled: boolean }) => (
+  <div className="absolute inset-0 transition-all duration-1000" style={{ backgroundColor: theme.visualProfile.bgMain }}>
+    {theme.visualProfile.motionLevel !== 'none' && animationsEnabled && (
+      <div className="absolute inset-[-50%] opacity-20 bg-[radial-gradient(ellipse_at_center,var(--color)_0%,transparent_70%)] animate-[float-ethereal_30s_ease-in-out_infinite]" style={{ '--color': theme.colors.hexPrimary } as any}></div>
+    )}
+    {theme.visualProfile.motionLevel === 'high' && animationsEnabled && (
+       <>
+         <div className="absolute top-1/4 left-1/4 w-[60vw] h-[60vh] opacity-10 blur-[150px] rounded-full" style={{ backgroundColor: theme.colors.hexPrimary }}></div>
+         <div className="absolute bottom-1/4 right-1/4 w-[60vw] h-[60vh] opacity-10 blur-[150px] rounded-full" style={{ backgroundColor: theme.colors.hexPrimary }}></div>
+       </>
+    )}
+  </div>
+);
 
 const CyberTheme = ({ color }: { color: string }) => (
   <div className="absolute inset-0 bg-black transition-all duration-1000">
